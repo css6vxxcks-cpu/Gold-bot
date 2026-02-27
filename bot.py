@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 
 # Configurazione
-API_KEY = "LA_TUA_CHIAVE_API"
+API_KEY = "4208665ZkKXxRAYXBVIIWEiQOoiVvleFfkfY"
 BASE_URL = "https://live.trading212.com/api/v0"
 SYMBOL = "RGLD"
 TAKE_PROFIT = 1.0
