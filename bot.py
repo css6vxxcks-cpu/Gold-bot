@@ -6,7 +6,7 @@ from datetime import datetime
 # Configurazione
 API_KEY = "LA_TUA_CHIAVE_API"
 BASE_URL = "https://live.trading212.com/api/v0"
-SYMBOL = "XAUUSD"
+SYMBOL = "RGLD"
 TAKE_PROFIT = 1.0
 STOP_LOSS = 1.0
 CHECK_INTERVAL = 60  # secondi tra ogni controllo
