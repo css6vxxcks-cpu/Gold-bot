@@ -1,125 +1,121 @@
 import requests
 import time
 import logging
+import os
 from datetime import datetime
+import pytz
 
 # Configurazione
-API_KEY = "4208665ZkKXxRAYXBVIIWEiQOoiVvleFfkfY"
-BASE_URL = "https://live.trading212.com/api/v0"
-SYMBOL = "RGLD"
+
+API_KEY = os.environ.get(“TRADING212_API_KEY”, “LA_TUA_CHIAVE_API”)
+BASE_URL = “https://live.trading212.com/api/v0”
+SYMBOL = “RGLD”
 TAKE_PROFIT = 1.0
 STOP_LOSS = 1.0
-CHECK_INTERVAL = 60  # secondi tra ogni controllo
+CHECK_INTERVAL = 60
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format=’%(asctime)s - %(message)s’)
 
 headers = {
-    "Authorization": API_KEY,
-    "Content-Type": "application/json"
+“Authorization”: API_KEY,
+“Content-Type”: “application/json”
 }
 
+def is_market_open():
+rome = pytz.timezone(‘Europe/Rome’)
+now = datetime.now(rome)
+# Lunedi-Venerdi, 15:30-22:00 ora italiana
+if now.weekday() >= 5:
+return False
+if now.hour < 15 or now.hour >= 22:
+return False
+if now.hour == 15 and now.minute < 30:
+return False
+return True
+
 def get_account_cash():
-    r = requests.get(f"{BASE_URL}/equity/account/cash", headers=headers)
-    return r.json()
+r = requests.get(f”{BASE_URL}/equity/account/cash”, headers=headers)
+logging.info(f”Cash response status: {r.status_code}”)
+logging.info(f”Cash response: {r.text}”)
+return r.json()
 
 def get_positions():
-    r = requests.get(f"{BASE_URL}/equity/portfolio", headers=headers)
-    return r.json()
+r = requests.get(f”{BASE_URL}/equity/portfolio”, headers=headers)
+logging.info(f”Portfolio response status: {r.status_code}”)
+logging.info(f”Portfolio response: {r.text}”)
+return r.json()
 
-def get_instruments():
-    r = requests.get(f"{BASE_URL}/equity/metadata/instruments", headers=headers)
-    return r.json()
+def place_buy_order(quantity):
+payload = {
+“ticker”: SYMBOL,
+“quantity”: quantity,
+“timeValidity”: “DAY”
+}
+r = requests.post(f”{BASE_URL}/equity/orders/market”, headers=headers, json=payload)
+logging.info(f”Buy order response: {r.text}”)
+return r.json()
 
-def place_order(quantity, direction="BUY"):
-    payload = {
-        "ticker": SYMBOL,
-        "quantity": quantity,
-        "limitPrice": None,
-        "stopPrice": None,
-        "timeValidity": "DAY"
-    }
-    if direction == "BUY":
-        r = requests.post(f"{BASE_URL}/equity/orders/market", headers=headers, json=payload)
-    else:
-        r = requests.post(f"{BASE_URL}/equity/orders/market", headers=headers, json=payload)
-    return r.json()
-
-def calculate_rsi(prices, period=14):
-    if len(prices) < period + 1:
-        return None
-    gains = []
-    losses = []
-    for i in range(1, period + 1):
-        diff = prices[i] - prices[i-1]
-        if diff > 0:
-            gains.append(diff)
-            losses.append(0)
-        else:
-            gains.append(0)
-            losses.append(abs(diff))
-    avg_gain = sum(gains) / period
-    avg_loss = sum(losses) / period
-    if avg_loss == 0:
-        return 100
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
-
-price_history = []
+def place_sell_order(quantity):
+payload = {
+“ticker”: SYMBOL,
+“quantity”: quantity,
+“timeValidity”: “DAY”
+}
+r = requests.post(f”{BASE_URL}/equity/orders/market”, headers=headers, json=payload)
+logging.info(f”Sell order response: {r.text}”)
+return r.json()
 
 def run_bot():
-    logging.info("Bot avviato - Trading oro XAU/USD")
-    position_open = False
-    entry_price = 0
-    quantity = 0
+logging.info(“Bot avviato - Trading RGLD su Trading 212 Invest”)
 
-    while True:
-        try:
-            cash_data = get_account_cash()
-            logging.info(f"Conto: {cash_data}")
+```
+while True:
+    try:
+        if not is_market_open():
+            logging.info("Mercato chiuso, attendo...")
+            time.sleep(300)
+            continue
 
-            positions = get_positions()
-            
-            # Controlla posizioni aperte
-            gold_position = None
-            for pos in positions if isinstance(positions, list) else []:
+        cash_data = get_account_cash()
+        free_cash = float(cash_data.get("free", 0))
+        logging.info(f"Cash disponibile: {free_cash:.2f} EUR")
+
+        positions = get_positions()
+        rgld_position = None
+        if isinstance(positions, list):
+            for pos in positions:
                 if pos.get("ticker") == SYMBOL:
-                    gold_position = pos
+                    rgld_position = pos
                     break
 
-            if gold_position:
-                current_price = float(gold_position.get("currentPrice", 0))
-                ppl = float(gold_position.get("ppl", 0))
-                logging.info(f"Posizione aperta - P&L: {ppl:.2f}€")
+        if rgld_position:
+            ppl = float(rgld_position.get("ppl", 0))
+            qty = float(rgld_position.get("quantity", 0))
+            logging.info(f"Posizione aperta RGLD - P&L: {ppl:.2f} EUR - Quantita: {qty}")
 
-                # Chiudi se raggiunto TP o SL
-                if ppl >= TAKE_PROFIT:
-                    logging.info(f"✅ Take profit raggiunto! +{ppl:.2f}€")
-                    # Chiudi posizione
-                    qty = float(gold_position.get("quantity", 0))
-                    place_order(qty, "SELL")
-                    logging.info("Posizione chiusa")
-                elif ppl <= -STOP_LOSS:
-                    logging.info(f"❌ Stop loss raggiunto! {ppl:.2f}€")
-                    qty = float(gold_position.get("quantity", 0))
-                    place_order(qty, "SELL")
-                    logging.info("Posizione chiusa")
+            if ppl >= TAKE_PROFIT:
+                logging.info(f"✅ Take profit! +{ppl:.2f} EUR - Chiudo posizione")
+                place_sell_order(qty)
+            elif ppl <= -STOP_LOSS:
+                logging.info(f"❌ Stop loss! {ppl:.2f} EUR - Chiudo posizione")
+                place_sell_order(qty)
             else:
-                # Nessuna posizione - valuta se aprire
-                free_cash = float(cash_data.get("free", 0)) if isinstance(cash_data, dict) else 0
-                logging.info(f"Cash disponibile: {free_cash:.2f}€")
+                logging.info(f"Posizione in corso, attendo... P&L: {ppl:.2f} EUR")
+        else:
+            if free_cash >= 10:
+                # Usa massimo 20 EUR per operazione
+                trade_amount = min(free_cash * 0.2, 20)
+                logging.info(f"Nessuna posizione aperta - Apro con {trade_amount:.2f} EUR")
+                # Quantita minima frazionaria
+                place_buy_order(0.01)
+            else:
+                logging.info(f"Cash insufficiente: {free_cash:.2f} EUR")
 
-                if free_cash > 10:
-                    # Usa il 10% del capitale per operazione
-                    trade_amount = min(free_cash * 0.1, 20)
-                    logging.info(f"Apro posizione con {trade_amount:.2f}€")
-                    # Quantità minima per oro (dipende da T212)
-                    result = place_order(0.01, "BUY")
-                    logging.info(f"Ordine: {result}")
+    except Exception as e:
+        logging.error(f"Errore: {e}")
 
-        except Exception as e:
-            logging.error(f"Errore: {e}")
+    time.sleep(CHECK_INTERVAL)
+```
 
-        time.sleep(CHECK_INTERVAL)
-
-if __name__ == "__main__":
-    run_bot()
+if **name** == “**main**”:
+run_bot() 
